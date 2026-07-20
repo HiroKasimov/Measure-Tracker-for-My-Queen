@@ -1,28 +1,21 @@
 name: Send Cycle Reminders
-
 on:
   schedule:
     - cron: '*/15 * * * *'   # har 15 daqiqada (UTC vaqti bo'yicha, skriptning o'zi Tashkent vaqtiga o'giradi)
   workflow_dispatch: {}       # "Actions" bo'limidan qo'lda ham ishga tushirish mumkin (test uchun qulay)
-
 jobs:
   send-reminders:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
       - name: Install dependencies
-        working-directory: notifier
-        run: npm install
-
+        run: npm install firebase-admin
       - name: Check reminders and send Telegram message
-        working-directory: notifier
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
