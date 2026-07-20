@@ -544,6 +544,26 @@ input[type="range"]{ flex:1; accent-color:var(--accent); }
       </div>
 
       <div class="card">
+        <div class="card-title">BRAUZER PUSH NOTIFICATION</div>
+        <div style="font-size:11px; color:var(--text-dim); margin-bottom:10px;" id="pushStatusText">Holat tekshirilmoqda...</div>
+        <div class="btn-primary" id="pushEnableBtn" onclick="enablePushNotifications()">🔔 Notification'larni yoqish</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">TELEGRAM BILDIRISHNOMALAR</div>
+        <div style="font-size:11px; color:var(--text-dim); margin-bottom:10px;" id="telegramStatusText">Holat tekshirilmoqda...</div>
+        <div class="hint" style="text-align:left; margin-top:0; margin-bottom:12px;">
+          1) Telegram'da botni oching va <b>/start</b> bosing<br>
+          2) Chat ID'ingizni oling (bot yoki @userinfobot orqali)<br>
+          3) Shu yerga kiriting va saqlang
+        </div>
+        <div class="field" style="margin-bottom:10px;">
+          <input type="text" id="telegramChatIdInput" placeholder="Masalan: 123456789">
+        </div>
+        <div class="btn-primary" onclick="saveTelegramChatId()">💾 Chat ID'ni saqlash</div>
+      </div>
+
+      <div class="card">
         <div class="card-title">DATA &amp; PRIVACY</div>
         <div class="settings-row" onclick="manualPushToCloud()">☁️ Bulutga yuborish (Firebase) <span class="val">›</span></div>
         <div class="settings-row" onclick="manualPullFromCloud()">⬇️☁️ Bulutdan olish (Firebase) <span class="val">›</span></div>
@@ -683,6 +703,10 @@ input[type="range"]{ flex:1; accent-color:var(--accent); }
 
 <div class="toast" id="toast"></div>
 
+<!-- Firebase (Cloud Messaging) SDK — brauzer push notification uchun -->
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging-compat.js"></script>
+
 <script>
 /* ============================================================
    DATA LAYER
@@ -700,7 +724,9 @@ function defaultData(){
     settings:{ cycleLength:28, periodLength:5, lutealLength:14, ovulationWindow:3 },
     notifications:{ nextPeriod:true, ovulation:true, dailyCheck:true, symptom:true },
     periodDays: [],
-    logs:{}
+    logs:{},
+    telegramChatId: null,
+    fcmToken: null
   };
 }
 
@@ -711,7 +737,9 @@ function normalizeData(parsed){
     settings: Object.assign(def.settings, parsed.settings||{}),
     notifications: Object.assign(def.notifications, parsed.notifications||{}),
     periodDays: Array.isArray(parsed.periodDays) ? parsed.periodDays : def.periodDays,
-    logs: parsed.logs || {}
+    logs: parsed.logs || {},
+    telegramChatId: parsed.telegramChatId || null,
+    fcmToken: parsed.fcmToken || null
   };
 }
 
@@ -1498,6 +1526,114 @@ function renderAll(){
 document.body.setAttribute('data-theme', DATA.profile.theme);
 renderAll();
 initCloudSync();
+
+/* ============================================================
+   TELEGRAM NOTIFICATIONS
+   Bot token hech qachon client kodda bo'lmaydi (xavfsizlik uchun) —
+   u faqat GitHub Actions secret'da turadi. Bu yerda faqat foydalanuvchi
+   o'z Telegram Chat ID'sini kiritadi, u DATA bilan birga Firebase'ga
+   saqlanadi, GitHub Actions skripti shu ID'ga xabar yuboradi.
+============================================================ */
+function renderTelegramStatus(){
+  const statusEl = document.getElementById('telegramStatusText');
+  const inputEl = document.getElementById('telegramChatIdInput');
+  if(!statusEl) return;
+  if(DATA.telegramChatId){
+    statusEl.innerText = `✓ Ulangan (Chat ID: ${DATA.telegramChatId}). Belgilangan vaqtlarda Telegram'ga xabar keladi.`;
+  } else {
+    statusEl.innerText = "Hali ulanmagan. Pastga Telegram Chat ID'ingizni kiriting.";
+  }
+  if(inputEl) inputEl.value = DATA.telegramChatId || '';
+}
+function saveTelegramChatId(){
+  const v = document.getElementById('telegramChatIdInput').value.trim();
+  if(!v){ showToast("Chat ID kiriting"); return; }
+  DATA.telegramChatId = v;
+  saveData();
+  renderTelegramStatus();
+  showToast('✓ Saqlandi!');
+}
+renderTelegramStatus();
+
+/* ============================================================
+   BRAUZER PUSH NOTIFICATIONS (Firebase Cloud Messaging)
+============================================================ */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDB0-xOCIiIIaYE57FlLFJtXTYsfw4UdkM",
+  authDomain: "shokh-s-project.firebaseapp.com",
+  databaseURL: "https://shokh-s-project-default-rtdb.firebaseio.com",
+  projectId: "shokh-s-project",
+  storageBucket: "shokh-s-project.firebasestorage.app",
+  messagingSenderId: "1052896898568",
+  appId: "1:1052896898568:web:dcf5cd2fc4d1910545ebbd"
+};
+const VAPID_KEY = "BMGif2hCb3hqBc0oBqSVAiOBMR15ayZYPK5AdT4reCgTIWHU1JKoSHlJw8cwbRAsvPbaVoIFCy7tqs-HqQkfRsl";
+
+let messaging = null;
+
+function initPush(){
+  const statusEl = document.getElementById('pushStatusText');
+  const btnEl = document.getElementById('pushEnableBtn');
+  if(!('Notification' in window) || !('serviceWorker' in navigator)){
+    if(statusEl) statusEl.innerText = "Bu brauzer push notification'ni qo'llab-quvvatlamaydi.";
+    if(btnEl) btnEl.style.display = 'none';
+    return;
+  }
+  try{
+    firebase.initializeApp(FIREBASE_CONFIG);
+    messaging = firebase.messaging();
+  }catch(e){ console.error(e); return; }
+
+  updatePushStatusUI();
+
+  messaging.onMessage((payload)=>{
+    const title = payload.notification && payload.notification.title || 'Sikl Kuzatuvchi';
+    const body = payload.notification && payload.notification.body || '';
+    if(Notification.permission === 'granted'){
+      navigator.serviceWorker.getRegistration().then(reg=>{
+        if(reg) reg.showNotification(title, {body, icon:'https://twemoji.maxcdn.com/v/latest/72x72/1f338.png'});
+        else new Notification(title, {body});
+      });
+    }
+    showToast('🔔 '+title);
+  });
+}
+
+function updatePushStatusUI(){
+  const statusEl = document.getElementById('pushStatusText');
+  const btnEl = document.getElementById('pushEnableBtn');
+  if(!statusEl || !btnEl) return;
+  if(Notification.permission === 'granted' && DATA.fcmToken){
+    statusEl.innerText = '✓ Notification yoqilgan. Belgilangan vaqtlarda brauzerga push xabar keladi.';
+    btnEl.innerText = '🔄 Qayta yoqish / yangilash';
+  } else if(Notification.permission === 'denied'){
+    statusEl.innerText = "Ruxsat rad etilgan. Brauzer sozlamalaridan saytga notification ruxsatini qo'lda yoqing.";
+  } else {
+    statusEl.innerText = "Belgilangan vaqtlarda (hayz, ovulyatsiya, kunlik eslatma) brauzerga push xabar olish uchun yoqing.";
+  }
+}
+
+async function enablePushNotifications(){
+  try{
+    const reg = await navigator.serviceWorker.register('firebase-messaging-sw.js');
+    const permission = await Notification.requestPermission();
+    if(permission !== 'granted'){ showToast("Ruxsat berilmadi"); updatePushStatusUI(); return; }
+    const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
+    if(token){
+      DATA.fcmToken = token;
+      saveData();
+      updatePushStatusUI();
+      showToast('✓ Brauzer notification yoqildi!');
+    } else {
+      showToast("Token olinmadi, qaytadan urinib ko'ring");
+    }
+  }catch(e){
+    console.error(e);
+    showToast("Xato: "+e.message);
+  }
+}
+
+initPush();
 </script>
 </body>
 </html>
