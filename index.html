@@ -772,17 +772,14 @@ function saveData(){
    FIREBASE REALTIME DATABASE SYNC (REST API, no SDK needed)
 ============================================================ */
 function pushToCloud(){
-  fetch(FIREBASE_URL, {
-    method:'PUT',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(DATA)
-  }).catch(()=>{ /* offline - local copy still saved, will retry on next save */ });
+if(!currentAuthUser) return;
+firebase.database().ref(FIREBASE_NODE).set(DATA).catch(()=>{ /* offline - local copy saqlanadi */ });
 }
 async function pullFromCloud(silent){
-  try{
-    const res = await fetch(FIREBASE_URL);
-    if(!res.ok) throw new Error('bad response');
-    const remote = await res.json();
+if(!currentAuthUser) return;
+try{
+const snap = await firebase.database().ref(FIREBASE_NODE).once('value');
+const remote = snap.val();
     if(remote){
       DATA = normalizeData(remote);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(DATA));
