@@ -1642,6 +1642,95 @@ async function enablePushNotifications(){
 }
 
 initPush();
+/* ============================================================
+   AUTH GATE — Google Sign-In + Admin tasdiqlash tizimi
+============================================================ */
+const ADMIN_UID = "BU_YERGA_OZINGNI_UIDINGNI_YOZASAN"; // pastdagi 3-qadamga qara
+
+const firebaseConfig = {
+  apiKey: "BU_YERGA_FIREBASE_API_KEY", // Firebase Console → Project Settings → General → Web app
+  authDomain: "shokh-s-project.firebaseapp.com",
+  databaseURL: FIREBASE_BASE,
+  projectId: "shokh-s-project"
+};
+firebase.initializeApp(firebaseConfig);
+
+let currentAuthUser = null;
+
+function showAuthScreen(which){
+  document.getElementById('authLoading').style.display = which==='loading' ? 'block':'none';
+  document.getElementById('authSignedOut').style.display = which==='signedout' ? 'block':'none';
+  document.getElementById('authPending').style.display = which==='pending' ? 'block':'none';
+  document.getElementById('authRejected').style.display = which==='rejected' ? 'block':'none';
+  document.getElementById('authGateOverlay').style.display = which==='approved' ? 'none':'flex';
+}
+
+function authSignIn(){
+  const provider = new firebase.auth.GoogleAuthProvider();
+  firebase.auth().signInWithPopup(provider).catch(e=>alert('Xato: '+e.message));
+}
+function authSignOut(){ firebase.auth().signOut(); }
+
+firebase.auth().onAuthStateChanged(async (user) => {
+  showAuthScreen('loading');
+  if(!user){ currentAuthUser = null; showAuthScreen('signedout'); return; }
+  currentAuthUser = user;
+
+  if(user.uid === ADMIN_UID){
+    // Admin — har doim ruxsat, va o'zini approved qilib qo'yadi
+    await firebase.database().ref('approvals/'+user.uid).set({
+      email:user.email, name:user.displayName, status:'approved', isAdmin:true
+    });
+    showAuthScreen('approved');
+    initCloudSync();
+    renderAdminPanelIfAdmin();
+    return;
+  }
+
+  const ref = firebase.database().ref('approvals/'+user.uid);
+  const snap = await ref.once('value');
+  const rec = snap.val();
+
+  if(!rec){
+    // Birinchi marta — so'rov yaratish
+    await ref.set({ email:user.email, name:user.displayName, status:'pending', requestedAt:Date.now() });
+    showAuthScreen('pending');
+    return;
+  }
+  if(rec.status === 'approved'){ showAuthScreen('approved'); initCloudSync(); return; }
+  if(rec.status === 'rejected'){ showAuthScreen('rejected'); return; }
+  showAuthScreen('pending');
+});
+
+/* ---------- Admin panel: pending so'rovlarni ko'rish/tasdiqlash ---------- */
+function renderAdminPanelIfAdmin(){
+  if(!currentAuthUser || currentAuthUser.uid !== ADMIN_UID) return;
+  const panel = document.createElement('div');
+  panel.className = 'card';
+  panel.innerHTML = '<div class="card-title">🔑 ADMIN — KIRISH SO\'ROVLARI</div><div id="adminPendingList" style="font-size:12px; color:var(--text-dim);">Yuklanmoqda...</div>';
+  const profilePage = document.getElementById('page-profile');
+  if(profilePage) profilePage.insertBefore(panel, profilePage.firstChild.nextSibling);
+
+  firebase.database().ref('approvals').on('value', snap => {
+    const all = snap.val() || {};
+    const list = document.getElementById('adminPendingList');
+    if(!list) return;
+    const entries = Object.entries(all).filter(([uid,v]) => uid !== ADMIN_UID);
+    if(!entries.length){ list.innerHTML = 'Hozircha so\'rov yo\'q.'; return; }
+    list.innerHTML = entries.map(([uid,v]) => `
+      <div style="padding:10px 0; border-top:1px solid rgba(255,255,255,0.05);">
+        <div style="color:var(--text);">${v.name||''} (${v.email||''})</div>
+        <div style="font-size:10px; color:var(--text-dimmer); margin-bottom:8px;">Holat: ${v.status}</div>
+        <div style="display:flex; gap:8px;">
+          <button onclick="adminSetStatus('${uid}','approved')" style="flex:1; padding:8px; border-radius:10px; border:none; background:var(--follicular); color:#000; font-size:11px; cursor:pointer;">✓ Tasdiqlash</button>
+          <button onclick="adminSetStatus('${uid}','rejected')" style="flex:1; padding:8px; border-radius:10px; border:none; background:var(--danger); color:#fff; font-size:11px; cursor:pointer;">✕ Rad etish</button>
+        </div>
+      </div>`).join('');
+  });
+}
+function adminSetStatus(uid, status){
+  firebase.database().ref('approvals/'+uid+'/status').set(status);
+}
 </script>
 </body>
 </html>
