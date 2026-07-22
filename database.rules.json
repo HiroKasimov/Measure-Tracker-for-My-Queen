@@ -1,8 +1,18 @@
 {
   "rules": {
     "cycleTracker": {
-      ".read": true,
-      ".write": true
+      ".read": "auth != null && root.child('approvals').child(auth.uid).child('status').val() === 'approved'",
+      ".write": "auth != null && root.child('approvals').child(auth.uid).child('status').val() === 'approved'"
+    },
+    "cycleTrackerMeta": {
+      ".read": "auth != null && root.child('approvals').child(auth.uid).child('status').val() === 'approved'",
+      ".write": "auth != null && root.child('approvals').child(auth.uid).child('status').val() === 'approved'"
+    },
+    "approvals": {
+      "$uid": {
+        ".read": "auth != null && ($uid === auth.uid || auth.uid === 'ADMIN_UID_BU_YERGA')",
+        ".write": "auth != null && (auth.uid === 'ADMIN_UID_BU_YERGA' || ($uid === auth.uid && !data.exists()))"
+      }
     },
     "$other": {
       ".read": false,
