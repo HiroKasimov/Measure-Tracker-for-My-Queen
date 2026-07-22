@@ -1682,7 +1682,7 @@ function showAuthScreen(which){
 
 function authSignIn(){
   const provider = new firebase.auth.GoogleAuthProvider();
-  firebase.auth().signInWithPopup(provider).catch(e=>alert('Xato: '+e.message));
+  firebase.auth().signInWithRedirect(provider);
 }
 function authSignOut(){ firebase.auth().signOut(); }
 
