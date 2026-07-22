@@ -10,8 +10,8 @@
     },
     "approvals": {
       "$uid": {
-        ".read": "auth != null && ($uid === auth.uid || auth.uid === 'ADMIN_UID_BU_YERGA')",
-        ".write": "auth != null && (auth.uid === 'ADMIN_UID_BU_YERGA' || ($uid === auth.uid && !data.exists()))"
+        ".read": "auth != null && ($uid === auth.uid || auth.uid === 'M2Ep9UAWVfMP78Ofj8FWjTNXvFH2')",
+        ".write": "auth != null && (auth.uid === 'M2Ep9UAWVfMP78Ofj8FWjTNXvFH2' || ($uid === auth.uid && !data.exists()))"
       }
     },
     "$other": {
